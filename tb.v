@@ -2,7 +2,7 @@ module tb();
    wire SDA, SCL;
 
    reg clk, reset_n;
-   wire [11:0] clk_divider = 6;
+   wire [11:0] clk_divider = 206;
    
    reg [6:0]   master_chip_addr;
    reg [7:0]   master_reg_addr;
@@ -29,6 +29,7 @@ module tb();
    wire        slave_sda_oeb;
    wire        slave_scl_out;
    wire        slave_scl_oeb;
+   reg 	       open_drain_mode;
    
    i2c_master i2c_master
      (.clk		(clk),
@@ -37,6 +38,7 @@ module tb();
       .chip_addr	(master_chip_addr),
       .reg_addr		(master_reg_addr),
       .datai		(master_datai),
+      .open_drain_mode  (open_drain_mode),
       .we		(master_we),
       .re		(master_re),
       .status		(master_status),
@@ -58,6 +60,7 @@ module tb();
       .chip_addr	(slave_chip_addr),
       .reg_addr		(slave_reg_addr),
       .datai		(slave_datai),
+      .open_drain_mode  (open_drain_mode),
       .we		(slave_we),
       .datao		(slave_datao),
       .busy             (slave_busy),
@@ -86,6 +89,7 @@ module tb();
    initial begin
       clk =  0;
       reset_n = 0;
+      open_drain_mode = 1;
       slave_chip_addr = CHIP_ADDR;
       master_chip_addr = 0;
       master_reg_addr = 0;
@@ -100,7 +104,15 @@ module tb();
 	
       #40 reset_n = 1;
 
+      $display("Testing open drain mode=1");
       test_rw(CHIP_ADDR, 8'h55, 16'hAAC3);
+
+      $display("Testing open drain mode=0");
+      #500 open_drain_mode = 0;
+      #100 test_rw(CHIP_ADDR, 8'hAA, 16'h5569);
+      #100 test_rw(CHIP_ADDR, 8'hAA, 16'h0000);
+      #100 test_rw(CHIP_ADDR, 8'hAA, 16'hFFFF);
+      
       #40 $finish;
    end
    
@@ -123,9 +135,9 @@ module tb();
 	 write_i2c(chip_addr, reg_addr, data);
 	 read_i2c(chip_addr, reg_addr);
 	 if(master_datao == data)
-	   $display("PASSED");
+	   $display("PASSED wrote=read=0x%x", data);
 	 else
-	   $display("FAILED");
+	   $display("FAILED wrote=0x%x read=0x%x", data, master_datao);
       end
    endtask
    

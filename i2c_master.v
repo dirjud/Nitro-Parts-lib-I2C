@@ -36,6 +36,15 @@
 // Under a successful write where all 4 bytes are ACK'd correctly, the
 // status register will read 5'b10000 (0x10).  The MSB is always one
 // and the four LSBs correspond to each ACK state.
+//
+//  The 'open_drain_mode' input should be set to 1 to ensure I2C bus
+//  compatibility.  Setting it to 0 causes this master device to drive
+//  the bus high rather than lettering the pullup.  This breaks I2C
+//  compatibility but makes for higher rate communication when a
+//  master and slave talk peer-to-peer and are the only devices on the
+//  bus.  Running in non-open_drain_mode is experiemental and has
+//  known bus contention.
+
 
 module i2c_master
    (
@@ -46,6 +55,7 @@ module i2c_master
     input [6:0] chip_addr,
     input [7:0] reg_addr,
     input [15:0] datai,
+    input open_drain_mode,
     input we,
     input re,
     output reg [4:0] status,
@@ -71,7 +81,7 @@ module i2c_master
 	     STATE_SEND_ACK=7,
 	     STATE_SEND_NACK=8;
    
-   reg sda_reg;
+   reg 	   sda_reg, oeb_reg;
    reg [31:0] sr;
    reg [1:0]  scl_count;
    reg [3:0]  state;
@@ -79,16 +89,28 @@ module i2c_master
    reg [5:0]  sr_count;
    reg 	      sda_s;
    reg 	      isWrite, readPass;
-
+   
    wire [2:0] byte_count = sr_count[5:3];
 //   assign scl = (scl_count[1]) ? 1'bz : 0;
-   assign scl_oeb = scl_count[1];
-   assign scl_out = 0;
+   assign sda_out = sda_reg;
+   assign sda_oeb = oeb_reg;
+   assign scl_out = set_out_reg(scl_count[1]);
+   assign scl_oeb = set_oeb_reg(0, scl_count[1]);
 
-//   assign sda = (sda_reg) ? 1'bz : 0;
-   assign sda_oeb = sda_reg;
-   assign sda_out = 0;
-   
+   function set_out_reg;
+      input   out1;
+      begin
+	 set_out_reg = (open_drain_mode) ? 0 : out1;
+      end
+   endfunction
+   function set_oeb_reg;
+      input   oeb;
+      input   out1;
+      begin
+	 set_oeb_reg = (open_drain_mode) ? out1 : oeb;
+      end
+   endfunction
+
    
    always @(posedge clk) begin
       sda_s <= sda_in;
@@ -96,6 +118,7 @@ module i2c_master
    always @(posedge clk or negedge reset_n) begin
       if(!reset_n) begin
 	 sda_reg <= 1;
+	 oeb_reg <= 1;
 	 scl_count <= 2'b10;
 	 clk_count <= 0;
 	 state <= STATE_WAIT;
@@ -111,7 +134,8 @@ module i2c_master
       end else begin
 	 if(state == STATE_WAIT) begin
 	    done <= 0;
-	    sda_reg <= 1;
+	    sda_reg <= set_out_reg(1);
+	    oeb_reg <= set_oeb_reg(1, 1);
 	    clk_count <= 0;
 	    scl_count <= 2'b10;
 	    sr_count  <= 0;
@@ -137,12 +161,14 @@ module i2c_master
 	       scl_count <= scl_count + 1;
 
 	       if(state == STATE_START_BIT_FOR_WRITE) begin
-		  sda_reg <= 0;
+		  sda_reg <= set_out_reg(0);
+		  oeb_reg <= set_oeb_reg(0, 0);
 		  state <= STATE_SHIFT_OUT;
 		  
 	       end else if(state == STATE_START_BIT_FOR_READ) begin
 		  if(scl_count == 2'b10) begin
-		     sda_reg <= 1'b0;
+		     sda_reg <= set_out_reg(0);
+		     oeb_reg <= set_oeb_reg(0, 0);
 		     state <= STATE_SHIFT_OUT;
 		     sr <= { chip_addr, 1'b1, reg_addr, datai };
 		     sr_count <= 0;
@@ -150,13 +176,21 @@ module i2c_master
 		  end
 
 	       end else if(state == STATE_SHIFT_OUT) begin		  
-		  if(scl_count == 2'b00) begin
+//		  if(scl_count == 2'b11) begin
+//		     if((sr_count[2:0]) == 0 && (|sr_count)) begin
+//			sda_reg <= set_out_reg(1);
+//			oeb_reg <= set_oeb_reg(1, 1);
+//		     end
+//		  end else 
+		    if(scl_count == 2'b00) begin
 		     if((sr_count[2:0]) == 0 && (|sr_count)) begin
 			state <= STATE_RCV_ACK;
-			sda_reg <= 1'b1;
+			sda_reg <= set_out_reg(1);
+			oeb_reg <= set_oeb_reg(1, 1);
 		     end else begin
 			sr_count <= sr_count + 1;
-			sda_reg  <= sr[31];
+			sda_reg  <= set_out_reg(sr[31]);
+			oeb_reg <= set_oeb_reg(0, sr[31]);
 			sr <= { sr[30:0], 1'b1 };
 		     end
 		  end
@@ -165,14 +199,16 @@ module i2c_master
 		  if(scl_count == 2'b00) begin
 		     if(isWrite && (byte_count == 4)) begin // done writing all 4 bytes
 			state <= STATE_STOP_BIT;
-			sda_reg <= 1'b0; // send stop bit
+			sda_reg <= set_out_reg(0); // send stop bit
+			oeb_reg <= set_oeb_reg(0, 0);
 		     end else if(!isWrite && !readPass && (byte_count == 2)) begin
 			state <= STATE_START_BIT_FOR_READ;
 		     end else if(!isWrite && readPass) begin
 			state <= STATE_SHIFT_IN;
 		     end else begin
 			state <= STATE_SHIFT_OUT;
-			sda_reg <= sr[31];
+			sda_reg <= set_out_reg(sr[31]);
+			oeb_reg <= set_oeb_reg(0, sr[31]);
 			sr <= { sr[30:0], 1'b1 };
 			sr_count <= sr_count + 1;
 		     end
@@ -182,7 +218,8 @@ module i2c_master
 
 	       end else if(state == STATE_STOP_BIT) begin
 		  if(scl_count == 2'b10) begin
-		     sda_reg <= 1'b1;
+		     sda_reg <= set_out_reg(1);
+		     oeb_reg <= set_oeb_reg(1, 1);
 		     state <= STATE_WAIT;
 		     done  <= 1;
 		  end
@@ -191,14 +228,17 @@ module i2c_master
 		  if(scl_count == 2'b01) begin
 		     datao <= { datao[14:0], sda_s };
 		     sr_count <= sr_count + 1;
-		     sda_reg <= 1'b1;
+		     sda_reg <= set_out_reg(1);
+		     oeb_reg <= set_oeb_reg(1, 1);
 		  end else if(scl_count == 2'b00) begin
 		     if(sr_count == 24) begin
 			state <= STATE_SEND_NACK; // terminate read after LSByte
-			sda_reg <= 1;
+			sda_reg <= set_out_reg(1);
+		     oeb_reg <= set_oeb_reg(1, 1);
 		     end else if(sr_count == 16) begin
 			state <= STATE_SEND_ACK; // send ACK of MSByte
-			sda_reg <= 0;
+			sda_reg <= set_out_reg(0);
+			oeb_reg <= set_oeb_reg(0, 0);
 		     end
 		  end
 	       
@@ -206,16 +246,19 @@ module i2c_master
 		  if(scl_count == 2'b01) begin
 		     status<= { status[3:0], sda_s }; // sample the ack bit
 		  end else if(scl_count == 2'b00) begin
-		     sda_reg <= 1;
+		     sda_reg <= set_out_reg(1);
+		     oeb_reg <= set_oeb_reg(1, 1);
 		     state <= STATE_SHIFT_IN;
 		  end
 
 	       end else if(state == STATE_SEND_NACK) begin
 		  if(scl_count == 2'b00) begin
-		     sda_reg <= 0;
+		     sda_reg <= set_out_reg(0);
+		     oeb_reg <= set_oeb_reg(0, 0);
 		     state <= STATE_STOP_BIT;
 		  end else begin
-		     sda_reg <= 1;
+		     sda_reg <= set_out_reg(1);
+		     oeb_reg <= set_oeb_reg(1, 1);
 		  end
 	       end
 
