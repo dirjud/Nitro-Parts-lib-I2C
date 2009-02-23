@@ -20,6 +20,7 @@ module i2c_slave
     output reg we,
     output reg [15:0] datao,
     output reg [7:0] reg_addr,
+    output reg done,
     output reg busy,
     input sda_in,
     output sda_out,
@@ -95,6 +96,7 @@ module i2c_slave
 	 rw_bit <= 0;
 	 sr_send <= 0;
 	 nack <= 0;
+	 done <= 0;
 	 busy <= 0;
       end else begin
 	 if(scl_ss && sda_falling) begin // start code
@@ -105,13 +107,16 @@ module i2c_slave
 	    oeb_reg <= set_oeb_reg(1, 1);
 	    we <= 0;
 	    busy <= 1;
+	    done <= 0;
 	 end else if(scl_ss && sda_rising) begin // stop code
 	    state <= STATE_WAIT;
 	    sda_reg <= set_sda_reg(1);
 	    oeb_reg <= set_oeb_reg(1, 1);
 	    we <= 0;
+	    if(busy) done <= 1;
 	 end else begin
 	    if(state <= STATE_WAIT) begin
+	       done <= 0;
 	       we <= 0;
 	       transfer_count <= 0;
 	       sr <= 8'h01; // preload sr with LSB 1.  When that 1 reaches the MSB of the shift register, we know we are done.
@@ -138,6 +143,7 @@ module i2c_slave
 		     if(transfer_count == 0) begin // 1st byte (i2c addr)
 			if(word[7:1] != chip_addr_reg) begin 
 			   state <= STATE_WAIT; // this transfer is not for us
+			   done <= 1;
 			end else begin
 			   rw_bit <= word[0];
 			   sr_send <= datai;
@@ -198,6 +204,7 @@ module i2c_slave
 	       if(scl_falling) begin
 		  if(nack) begin
 		     state <= STATE_WAIT; // we received a nack, so we are done
+		     done <= 1;
 		     sda_reg <= set_sda_reg(1);
 		     oeb_reg <= set_oeb_reg(1, 1);
 		  end else begin

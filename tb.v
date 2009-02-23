@@ -29,6 +29,8 @@ module tb();
    wire        slave_sda_oeb;
    wire        slave_scl_out;
    wire        slave_scl_oeb;
+   wire        slave_busy;
+   wire        slave_done;
    reg 	       open_drain_mode;
    
    i2c_master i2c_master
@@ -63,6 +65,7 @@ module tb();
       .open_drain_mode  (open_drain_mode),
       .we		(slave_we),
       .datao		(slave_datao),
+      .done             (slave_done),
       .busy             (slave_busy),
       
       .sda_in		(SDA),
