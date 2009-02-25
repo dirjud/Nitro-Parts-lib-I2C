@@ -115,7 +115,7 @@ module i2c_slave
 	    we <= 0;
 	    if(busy) done <= 1;
 	 end else begin
-	    if(state <= STATE_WAIT) begin
+	    if(state == STATE_WAIT) begin
 	       done <= 0;
 	       we <= 0;
 	       transfer_count <= 0;
@@ -123,7 +123,7 @@ module i2c_slave
 	       sda_reg <= set_sda_reg(1);
 	       oeb_reg <= set_oeb_reg(1, 1);
 	       busy <= 0;
-	    end else if(state <= STATE_SHIFT) begin
+	    end else if(state == STATE_SHIFT) begin
 	       sda_reg <= set_sda_reg(1);
 	       oeb_reg <= set_oeb_reg(1, 1);
 	       if(scl_rising) begin
@@ -146,7 +146,7 @@ module i2c_slave
 			   done <= 1;
 			end else begin
 			   rw_bit <= word[0];
-			   sr_send <= datai;
+			   sr_send <= datai; 
 			   state <= STATE_ACK;
 			end
 		     end else if(transfer_count == 1) begin//2nd byte (reg addr)
