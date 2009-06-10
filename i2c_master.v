@@ -47,22 +47,24 @@
 
 
 module i2c_master
+  #(parameter NUM_ADDR_BYTES=1,
+    parameter NUM_DATA_BYTES=2)
    (
     input clk,
     input reset_n,
     input [11:0] clk_divider, // sets the 1/4 scl period
 
     input [6:0] chip_addr,
-    input [7:0] reg_addr,
-    input [15:0] datai,
+    input [8*NUM_ADDR_BYTES-1:0] reg_addr,
+    input [8*NUM_DATA_BYTES-1:0] datai,
     input open_drain_mode,
     input we,
     input re,
-    output reg [4:0] status,
+    output reg [3:0] status,
     output reg done,
     output reg busy,
     
-    output reg [15:0] datao,
+    output reg [8*NUM_DATA_BYTES-1:0] datao,
     input sda_in,
     output sda_out,
     output sda_oeb,
@@ -72,23 +74,23 @@ module i2c_master
     );
 
    parameter STATE_WAIT = 0, 
-	     STATE_START_BIT_FOR_WRITE = 1, 
-	     STATE_SHIFT_OUT = 2,
-	     STATE_RCV_ACK=3,
-	     STATE_STOP_BIT=4,
-	     STATE_START_BIT_FOR_READ=5,
-	     STATE_SHIFT_IN=6,
-	     STATE_SEND_ACK=7,
-	     STATE_SEND_NACK=8;
+             STATE_START_BIT_FOR_WRITE = 1, 
+             STATE_SHIFT_OUT = 2,
+             STATE_RCV_ACK=3,
+             STATE_STOP_BIT=4,
+             STATE_START_BIT_FOR_READ=5,
+             STATE_SHIFT_IN=6,
+             STATE_SEND_ACK=7,
+             STATE_SEND_NACK=8;
    
-   reg 	   sda_reg, oeb_reg;
-   reg [31:0] sr;
+   reg     sda_reg, oeb_reg;
+   reg [(8+8*NUM_ADDR_BYTES+8*NUM_DATA_BYTES)-1:0] sr;
    reg [1:0]  scl_count;
    reg [3:0]  state;
    reg [11:0] clk_count;
    reg [5:0]  sr_count;
-   reg 	      sda_s;
-   reg 	      isWrite, readPass;
+   reg        sda_s;
+   reg        isWrite, readPass;
    
    wire [2:0] byte_count = sr_count[5:3];
 //   assign scl = (scl_count[1]) ? 1'bz : 0;
@@ -100,14 +102,14 @@ module i2c_master
    function set_out_reg;
       input   out1;
       begin
-	 set_out_reg = (open_drain_mode) ? 0 : out1;
+         set_out_reg = (open_drain_mode) ? 0 : out1;
       end
    endfunction
    function set_oeb_reg;
       input   oeb;
       input   out1;
       begin
-	 set_oeb_reg = (open_drain_mode) ? out1 : oeb;
+         set_oeb_reg = (open_drain_mode) ? out1 : oeb;
       end
    endfunction
 
@@ -117,155 +119,155 @@ module i2c_master
    end
    always @(posedge clk or negedge reset_n) begin
       if(!reset_n) begin
-	 sda_reg <= 1;
-	 oeb_reg <= 1;
-	 scl_count <= 2'b10;
-	 clk_count <= 0;
-	 state <= STATE_WAIT;
-	 sr_count <= 0;
-	 sr <= -1;
-	 status <= 5'b10000;
-	 isWrite <= 1;
-	 readPass <= 0;
-	 datao <= 0;
-	 done <= 0;
-	 busy <= 0;
+         sda_reg <= 1;
+         oeb_reg <= 1;
+         scl_count <= 2'b10;
+         clk_count <= 0;
+         state <= STATE_WAIT;
+         sr_count <= 0;
+         sr <= -1;
+         status <= 4'b0000;
+         isWrite <= 1;
+         readPass <= 0;
+         datao <= 0;
+         done <= 0;
+         busy <= 0;
 
       end else begin
-	 if(state == STATE_WAIT) begin
-	    done <= 0;
-	    sda_reg <= set_out_reg(1);
-	    oeb_reg <= set_oeb_reg(1, 1);
-	    clk_count <= 0;
-	    scl_count <= 2'b10;
-	    sr_count  <= 0;
-	    sr <= { chip_addr, 1'b0, reg_addr, datai };  // latch data into shift register
-	    if(we) begin
-	       state   <= STATE_START_BIT_FOR_WRITE;
-	       status  <= 5'b00001;  // reset status
-	       isWrite <= 1;
-	       busy    <= 1;
-	    end else if(re) begin 
-	       state   <= STATE_START_BIT_FOR_WRITE; //1st we write the addr
-	       status  <= 5'b00001;  // reset status
-	       isWrite <= 0;
-	       readPass<= 0;
-	       busy    <= 1;
-	    end else begin
-	       busy    <= 0;
-	    end
-	    	    
-	 end else begin
-	    if(clk_count == clk_divider) begin // advance state on slow i2c clk
-	       clk_count <= 0;
-	       scl_count <= scl_count + 1;
+         if(state == STATE_WAIT) begin
+            done <= 0;
+            sda_reg <= set_out_reg(1);
+            oeb_reg <= set_oeb_reg(1, 1);
+            clk_count <= 0;
+            scl_count <= 2'b10;
+            sr_count  <= 0;
+            sr <= { chip_addr, 1'b0, reg_addr, datai };  // latch data into shift register
+            if(we) begin
+               state   <= STATE_START_BIT_FOR_WRITE;
+               status  <= 4'b0000;  // reset status
+               isWrite <= 1;
+               busy    <= 1;
+            end else if(re) begin 
+               state   <= STATE_START_BIT_FOR_WRITE; //1st we write the addr
+               status  <= 4'b0000;  // reset status
+               isWrite <= 0;
+               readPass<= 0;
+               busy    <= 1;
+            end else begin
+               busy    <= 0;
+            end
+                    
+         end else begin
+            if(clk_count == clk_divider) begin // advance state on slow i2c clk
+               clk_count <= 0;
+               scl_count <= scl_count + 1;
 
-	       if(state == STATE_START_BIT_FOR_WRITE) begin
-		  sda_reg <= set_out_reg(0);
-		  oeb_reg <= set_oeb_reg(0, 0);
-		  state <= STATE_SHIFT_OUT;
-		  
-	       end else if(state == STATE_START_BIT_FOR_READ) begin
-		  if(scl_count == 2'b10) begin
-		     sda_reg <= set_out_reg(0);
-		     oeb_reg <= set_oeb_reg(0, 0);
-		     state <= STATE_SHIFT_OUT;
-		     sr <= { chip_addr, 1'b1, reg_addr, datai };
-		     sr_count <= 0;
-		     readPass <= 1;
-		  end
+               if(state == STATE_START_BIT_FOR_WRITE) begin
+                  sda_reg <= set_out_reg(0);
+                  oeb_reg <= set_oeb_reg(0, 0);
+                  state <= STATE_SHIFT_OUT;
+                  
+               end else if(state == STATE_START_BIT_FOR_READ) begin
+                  if(scl_count == 2'b10) begin
+                     sda_reg <= set_out_reg(0);
+                     oeb_reg <= set_oeb_reg(0, 0);
+                     state <= STATE_SHIFT_OUT;
+                     sr <= { chip_addr, 1'b1, reg_addr, datai };
+                     sr_count <= 0;
+                     readPass <= 1;
+                  end
 
-	       end else if(state == STATE_SHIFT_OUT) begin		  
-//		  if(scl_count == 2'b11) begin
-//		     if((sr_count[2:0]) == 0 && (|sr_count)) begin
-//			sda_reg <= set_out_reg(1);
-//			oeb_reg <= set_oeb_reg(1, 1);
-//		     end
-//		  end else 
-		    if(scl_count == 2'b00) begin
-		     if((sr_count[2:0]) == 0 && (|sr_count)) begin
-			state <= STATE_RCV_ACK;
-			sda_reg <= set_out_reg(1);
-			oeb_reg <= set_oeb_reg(1, 1);
-		     end else begin
-			sr_count <= sr_count + 1;
-			sda_reg  <= set_out_reg(sr[31]);
-			oeb_reg <= set_oeb_reg(0, sr[31]);
-			sr <= { sr[30:0], 1'b1 };
-		     end
-		  end
-		  
-	       end else if(state == STATE_RCV_ACK) begin
-		  if(scl_count == 2'b00) begin
-		     if(isWrite && (byte_count == 4)) begin // done writing all 4 bytes
-			state <= STATE_STOP_BIT;
-			sda_reg <= set_out_reg(0); // send stop bit
-			oeb_reg <= set_oeb_reg(0, 0);
-		     end else if(!isWrite && !readPass && (byte_count == 2)) begin
-			state <= STATE_START_BIT_FOR_READ;
-		     end else if(!isWrite && readPass) begin
-			state <= STATE_SHIFT_IN;
-		     end else begin
-			state <= STATE_SHIFT_OUT;
-			sda_reg <= set_out_reg(sr[31]);
-			oeb_reg <= set_oeb_reg(0, sr[31]);
-			sr <= { sr[30:0], 1'b1 };
-			sr_count <= sr_count + 1;
-		     end
-		  end else if(scl_count == 2'b01) begin
-		     status <= { status[3:0], sda_s }; // sample the ack bit
-		  end
+               end else if(state == STATE_SHIFT_OUT) begin                
+//                if(scl_count == 2'b11) begin
+//                   if((sr_count[2:0]) == 0 && (|sr_count)) begin
+//                      sda_reg <= set_out_reg(1);
+//                      oeb_reg <= set_oeb_reg(1, 1);
+//                   end
+//                end else 
+                    if(scl_count == 2'b00) begin
+                     if((sr_count[2:0]) == 0 && (|sr_count)) begin
+                        state <= STATE_RCV_ACK;
+                        sda_reg <= set_out_reg(1);
+                        oeb_reg <= set_oeb_reg(1, 1);
+                     end else begin
+                        sr_count <= sr_count + 1;
+                        sda_reg  <= set_out_reg(sr[31]);
+                        oeb_reg <= set_oeb_reg(0, sr[31]);
+                        sr <= { sr[30:0], 1'b1 };
+                     end
+                  end
+                  
+               end else if(state == STATE_RCV_ACK) begin
+                  if(scl_count == 2'b00) begin
+                     if(isWrite && (byte_count == 4)) begin // done writing all 4 bytes
+                        state <= STATE_STOP_BIT;
+                        sda_reg <= set_out_reg(0); // send stop bit
+                        oeb_reg <= set_oeb_reg(0, 0);
+                     end else if(!isWrite && !readPass && (byte_count == 2)) begin
+                        state <= STATE_START_BIT_FOR_READ;
+                     end else if(!isWrite && readPass) begin
+                        state <= STATE_SHIFT_IN;
+                     end else begin
+                        state <= STATE_SHIFT_OUT;
+                        sda_reg <= set_out_reg(sr[31]);
+                        oeb_reg <= set_oeb_reg(0, sr[31]);
+                        sr <= { sr[30:0], 1'b1 };
+                        sr_count <= sr_count + 1;
+                     end
+                  end else if(scl_count == 2'b01) begin
+                     status <= { status[2:0], sda_s }; // sample the ack bit
+                  end
 
-	       end else if(state == STATE_STOP_BIT) begin
-		  if(scl_count == 2'b10) begin
-		     sda_reg <= set_out_reg(1);
-		     oeb_reg <= set_oeb_reg(1, 1);
-		     state <= STATE_WAIT;
-		     done  <= 1;
-		  end
+               end else if(state == STATE_STOP_BIT) begin
+                  if(scl_count == 2'b10) begin
+                     sda_reg <= set_out_reg(1);
+                     oeb_reg <= set_oeb_reg(1, 1);
+                     state <= STATE_WAIT;
+                     done  <= 1;
+                  end
 
-	       end else if(state == STATE_SHIFT_IN) begin
-		  if(scl_count == 2'b01) begin
-		     datao <= { datao[14:0], sda_s };
-		     sr_count <= sr_count + 1;
-		     sda_reg <= set_out_reg(1);
-		     oeb_reg <= set_oeb_reg(1, 1);
-		  end else if(scl_count == 2'b00) begin
-		     if(sr_count == 24) begin
-			state <= STATE_SEND_NACK; // terminate read after LSByte
-			sda_reg <= set_out_reg(1);
-		     oeb_reg <= set_oeb_reg(1, 1);
-		     end else if(sr_count == 16) begin
-			state <= STATE_SEND_ACK; // send ACK of MSByte
-			sda_reg <= set_out_reg(0);
-			oeb_reg <= set_oeb_reg(0, 0);
-		     end
-		  end
-	       
-	       end else if(state == STATE_SEND_ACK) begin
-		  if(scl_count == 2'b01) begin
-		     status<= { status[3:0], sda_s }; // sample the ack bit
-		  end else if(scl_count == 2'b00) begin
-		     sda_reg <= set_out_reg(1);
-		     oeb_reg <= set_oeb_reg(1, 1);
-		     state <= STATE_SHIFT_IN;
-		  end
+               end else if(state == STATE_SHIFT_IN) begin
+                  if(scl_count == 2'b01) begin
+                     datao <= { datao[14:0], sda_s };
+                     sr_count <= sr_count + 1;
+                     sda_reg <= set_out_reg(1);
+                     oeb_reg <= set_oeb_reg(1, 1);
+                  end else if(scl_count == 2'b00) begin
+                     if(sr_count == 24) begin
+                        state <= STATE_SEND_NACK; // terminate read after LSByte
+                        sda_reg <= set_out_reg(1);
+                     oeb_reg <= set_oeb_reg(1, 1);
+                     end else if(sr_count == 16) begin
+                        state <= STATE_SEND_ACK; // send ACK of MSByte
+                        sda_reg <= set_out_reg(0);
+                        oeb_reg <= set_oeb_reg(0, 0);
+                     end
+                  end
+               
+               end else if(state == STATE_SEND_ACK) begin
+                  if(scl_count == 2'b01) begin
+                     status<= { status[2:0], sda_s }; // sample the ack bit
+                  end else if(scl_count == 2'b00) begin
+                     sda_reg <= set_out_reg(1);
+                     oeb_reg <= set_oeb_reg(1, 1);
+                     state <= STATE_SHIFT_IN;
+                  end
 
-	       end else if(state == STATE_SEND_NACK) begin
-		  if(scl_count == 2'b00) begin
-		     sda_reg <= set_out_reg(0);
-		     oeb_reg <= set_oeb_reg(0, 0);
-		     state <= STATE_STOP_BIT;
-		  end else begin
-		     sda_reg <= set_out_reg(1);
-		     oeb_reg <= set_oeb_reg(1, 1);
-		  end
-	       end
+               end else if(state == STATE_SEND_NACK) begin
+                  if(scl_count == 2'b00) begin
+                     sda_reg <= set_out_reg(0);
+                     oeb_reg <= set_oeb_reg(0, 0);
+                     state <= STATE_STOP_BIT;
+                  end else begin
+                     sda_reg <= set_out_reg(1);
+                     oeb_reg <= set_oeb_reg(1, 1);
+                  end
+               end
 
-	    end else begin
-	       clk_count <= clk_count + 1;
-	    end
-	 end 
+            end else begin
+               clk_count <= clk_count + 1;
+            end
+         end 
       end
    end
    
