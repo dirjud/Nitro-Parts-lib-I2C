@@ -1,14 +1,13 @@
 // Author: Lane Brooks
 // Date: May 23, 2008
-// Description: A simple I2C master that read/writes to the micron 5mp part.
+// Description: A simple I2C master
 //
-// From the Micron Datasheet:
 // A typical READ or WRITE sequence begins by the master sending a
 // start bit. After the start bit, the master sends the slave device's
-// 8-bit address. The last bit of the address determines if the
-// request is a READ or a WRITE, where a 0 indicates a WRITE and a
-// 1 indicates a READ. The slave device acknowledges its address by
-// sending an acknowledge bit back to the master.  
+// 7-bit address and a bit to specify if the request is a READ or a
+// WRITE, where a 0 indicates a WRITE and a 1 indicates a READ. The
+// slave device acknowledges its address by sending an acknowledge bit
+// back to the master.
 //
 // If the request is a WRITE, the master then transfers the 8-bit
 // register address to which a WRITE should take place. The slave
@@ -31,11 +30,11 @@
 // data transfer is stopped when the master sends a no-acknowledge
 // bit.
 //
-// This module returns a status register which is a 5 bit number
-// indicating the ack status of each byte written to the micron part.
-// Under a successful write where all 4 bytes are ACK'd correctly, the
-// status register will read 5'b10000 (0x10).  The MSB is always one
-// and the four LSBs correspond to each ACK state.
+// This module returns a status register which is a 4 bit number
+// indicating the ack status of each byte in the transaction Under a
+// successful write where all 4 bytes are ACK'd correctly, the status
+// register will read 4'b0000 (0x0).  Each bit corresponds to each ACK
+// state.  Any bit that is not zero is a transfer that was not ack'd.
 //
 //  The 'open_drain_mode' input should be set to 1 to ensure I2C bus
 //  compatibility.  Setting it to 0 causes this master device to drive
@@ -60,7 +59,7 @@ module i2c_master
     input open_drain_mode,
     input we,
     input re,
-    output reg [3:0] status,
+    output reg [NUM_ADDR_BYTES+NUM_DATA_BYTES:0] status,
     output reg done,
     output reg busy,
     
@@ -73,24 +72,28 @@ module i2c_master
     output scl_oeb
     );
 
-   parameter STATE_WAIT = 0, 
-             STATE_START_BIT_FOR_WRITE = 1, 
-             STATE_SHIFT_OUT = 2,
-             STATE_RCV_ACK=3,
-             STATE_STOP_BIT=4,
-             STATE_START_BIT_FOR_READ=5,
-             STATE_SHIFT_IN=6,
-             STATE_SEND_ACK=7,
-             STATE_SEND_NACK=8;
-   
-   reg     sda_reg, oeb_reg;
-   reg [(8+8*NUM_ADDR_BYTES+8*NUM_DATA_BYTES)-1:0] sr;
+   parameter STATE_WAIT                 = 0, 
+             STATE_START_BIT_FOR_WRITE  = 1, 
+             STATE_SHIFT_OUT            = 2,
+             STATE_RCV_ACK              =3,
+             STATE_STOP_BIT             =4,
+             STATE_START_BIT_FOR_READ   =5,
+             STATE_SHIFT_IN             =6,
+             STATE_SEND_ACK             =7,
+             STATE_SEND_NACK            =8;
+
+
+   parameter SR_WIDTH = 8 + 8*NUM_ADDR_BYTES + 8*NUM_DATA_BYTES;
+   parameter STATUS_WIDTH = NUM_ADDR_BYTES+NUM_DATA_BYTES+1;
+   reg [SR_WIDTH-1:0] sr;
    reg [1:0]  scl_count;
    reg [3:0]  state;
    reg [11:0] clk_count;
    reg [5:0]  sr_count;
-   reg        sda_s;
+   reg     sda_reg, oeb_reg, sda_s;
    reg        isWrite, readPass;
+
+
    
    wire [2:0] byte_count = sr_count[5:3];
 //   assign scl = (scl_count[1]) ? 1'bz : 0;
@@ -126,7 +129,7 @@ module i2c_master
          state <= STATE_WAIT;
          sr_count <= 0;
          sr <= -1;
-         status <= 4'b0000;
+         status <= 0;
          isWrite <= 1;
          readPass <= 0;
          datao <= 0;
@@ -144,12 +147,12 @@ module i2c_master
             sr <= { chip_addr, 1'b0, reg_addr, datai };  // latch data into shift register
             if(we) begin
                state   <= STATE_START_BIT_FOR_WRITE;
-               status  <= 4'b0000;  // reset status
+               status  <= 0;  // reset status
                isWrite <= 1;
                busy    <= 1;
             end else if(re) begin 
                state   <= STATE_START_BIT_FOR_WRITE; //1st we write the addr
-               status  <= 4'b0000;  // reset status
+               status  <= 0;  // reset status
                isWrite <= 0;
                readPass<= 0;
                busy    <= 1;
@@ -178,12 +181,6 @@ module i2c_master
                   end
 
                end else if(state == STATE_SHIFT_OUT) begin                
-//                if(scl_count == 2'b11) begin
-//                   if((sr_count[2:0]) == 0 && (|sr_count)) begin
-//                      sda_reg <= set_out_reg(1);
-//                      oeb_reg <= set_oeb_reg(1, 1);
-//                   end
-//                end else 
                     if(scl_count == 2'b00) begin
                      if((sr_count[2:0]) == 0 && (|sr_count)) begin
                         state <= STATE_RCV_ACK;
@@ -191,31 +188,31 @@ module i2c_master
                         oeb_reg <= set_oeb_reg(1, 1);
                      end else begin
                         sr_count <= sr_count + 1;
-                        sda_reg  <= set_out_reg(sr[31]);
-                        oeb_reg <= set_oeb_reg(0, sr[31]);
-                        sr <= { sr[30:0], 1'b1 };
+                        sda_reg  <= set_out_reg(sr[SR_WIDTH-1]);
+                        oeb_reg  <= set_oeb_reg(0, sr[SR_WIDTH-1]);
+                        sr <= { sr[SR_WIDTH-2:0], 1'b1 };
                      end
                   end
                   
                end else if(state == STATE_RCV_ACK) begin
                   if(scl_count == 2'b00) begin
-                     if(isWrite && (byte_count == 4)) begin // done writing all 4 bytes
+                     if(isWrite && (byte_count == NUM_DATA_BYTES + NUM_ADDR_BYTES + 1)) begin // done writing all bytes
                         state <= STATE_STOP_BIT;
                         sda_reg <= set_out_reg(0); // send stop bit
                         oeb_reg <= set_oeb_reg(0, 0);
-                     end else if(!isWrite && !readPass && (byte_count == 2)) begin
+                     end else if(!isWrite && !readPass && (byte_count == NUM_ADDR_BYTES+1)) begin
                         state <= STATE_START_BIT_FOR_READ;
                      end else if(!isWrite && readPass) begin
                         state <= STATE_SHIFT_IN;
                      end else begin
                         state <= STATE_SHIFT_OUT;
-                        sda_reg <= set_out_reg(sr[31]);
-                        oeb_reg <= set_oeb_reg(0, sr[31]);
-                        sr <= { sr[30:0], 1'b1 };
+                        sda_reg <= set_out_reg(   sr[SR_WIDTH-1]);
+                        oeb_reg <= set_oeb_reg(0, sr[SR_WIDTH-1]);
+                        sr <= { sr[SR_WIDTH-2:0], 1'b1 };
                         sr_count <= sr_count + 1;
                      end
                   end else if(scl_count == 2'b01) begin
-                     status <= { status[2:0], sda_s }; // sample the ack bit
+                     status <= { status[STATUS_WIDTH-2:0], sda_s }; // sample the ack bit
                   end
 
                end else if(state == STATE_STOP_BIT) begin
@@ -228,16 +225,16 @@ module i2c_master
 
                end else if(state == STATE_SHIFT_IN) begin
                   if(scl_count == 2'b01) begin
-                     datao <= { datao[14:0], sda_s };
+                     datao <= { datao[8*NUM_DATA_BYTES-2:0], sda_s };
                      sr_count <= sr_count + 1;
                      sda_reg <= set_out_reg(1);
                      oeb_reg <= set_oeb_reg(1, 1);
                   end else if(scl_count == 2'b00) begin
-                     if(sr_count == 24) begin
+                     if(sr_count == 8*(NUM_DATA_BYTES+1)) begin
                         state <= STATE_SEND_NACK; // terminate read after LSByte
                         sda_reg <= set_out_reg(1);
-                     oeb_reg <= set_oeb_reg(1, 1);
-                     end else if(sr_count == 16) begin
+                        oeb_reg <= set_oeb_reg(1, 1);
+                     end else if(sr_count[2:0] == 0) begin
                         state <= STATE_SEND_ACK; // send ACK of MSByte
                         sda_reg <= set_out_reg(0);
                         oeb_reg <= set_oeb_reg(0, 0);
@@ -246,7 +243,7 @@ module i2c_master
                
                end else if(state == STATE_SEND_ACK) begin
                   if(scl_count == 2'b01) begin
-                     status<= { status[2:0], sda_s }; // sample the ack bit
+                     status<= { status[STATUS_WIDTH-2:0], sda_s };// sample the ack bit
                   end else if(scl_count == 2'b00) begin
                      sda_reg <= set_out_reg(1);
                      oeb_reg <= set_oeb_reg(1, 1);
