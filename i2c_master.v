@@ -47,14 +47,15 @@
 
 module i2c_master
   #(parameter NUM_ADDR_BYTES=1,
-    parameter NUM_DATA_BYTES=2)
+    parameter NUM_DATA_BYTES=2,
+    parameter REG_ADDR_WIDTH=8*NUM_ADDR_BYTES)
    (
     input clk,
     input reset_n,
     input [11:0] clk_divider, // sets the 1/4 scl period
 
     input [6:0] chip_addr,
-    input [8*NUM_ADDR_BYTES-1:0] reg_addr,
+    input [REG_ADDR_WIDTH-1:0] reg_addr,
     input [8*NUM_DATA_BYTES-1:0] datai,
     input open_drain_mode,
     input we,
@@ -144,14 +145,25 @@ module i2c_master
             clk_count <= 0;
             scl_count <= 2'b10;
             sr_count  <= 0;
-            sr <= { chip_addr, 1'b0, reg_addr, datai };  // latch data into shift register
+            /* verilator lint_off WIDTH */
+            if(NUM_ADDR_BYTES == 0) begin
+               sr <= { chip_addr, 1'b0, datai };  // latch data into shift register
+            end else begin
+               sr <= { chip_addr, 1'b0, reg_addr, datai };  // latch data into shift register
+            end
+            /* verilator lint_on WIDTH */
+
             if(we) begin
                state   <= STATE_START_BIT_FOR_WRITE;
                status  <= 0;  // reset status
                isWrite <= 1;
                busy    <= 1;
-            end else if(re) begin 
-               state   <= STATE_START_BIT_FOR_WRITE; //1st we write the addr
+            end else if(re) begin
+               if(NUM_ADDR_BYTES == 0) begin
+                  state   <= STATE_START_BIT_FOR_READ; //1st we write the addr
+               end else begin
+                  state   <= STATE_START_BIT_FOR_WRITE; //1st we write the addr
+               end
                status  <= 0;  // reset status
                isWrite <= 0;
                readPass<= 0;
@@ -175,7 +187,7 @@ module i2c_master
                      sda_reg <= set_out_reg(0);
                      oeb_reg <= set_oeb_reg(0, 0);
                      state <= STATE_SHIFT_OUT;
-                     sr <= { chip_addr, 1'b1, reg_addr, datai };
+                     sr <= { chip_addr, 1'b1, {8*(NUM_ADDR_BYTES+NUM_DATA_BYTES){1'b0}}};
                      sr_count <= 0;
                      readPass <= 1;
                   end
