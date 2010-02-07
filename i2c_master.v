@@ -73,19 +73,19 @@ module i2c_master
     output scl_oeb
     );
 
-   parameter STATE_WAIT                 = 0, 
-             STATE_START_BIT_FOR_WRITE  = 1, 
-             STATE_SHIFT_OUT            = 2,
-             STATE_RCV_ACK              =3,
-             STATE_STOP_BIT             =4,
-             STATE_START_BIT_FOR_READ   =5,
-             STATE_SHIFT_IN             =6,
-             STATE_SEND_ACK             =7,
-             STATE_SEND_NACK            =8;
+   localparam STATE_WAIT                 = 0, 
+              STATE_START_BIT_FOR_WRITE  = 1, 
+              STATE_SHIFT_OUT            = 2,
+              STATE_RCV_ACK              = 3,
+              STATE_STOP_BIT             = 4,
+              STATE_START_BIT_FOR_READ   = 5,
+              STATE_SHIFT_IN             = 6,
+              STATE_SEND_ACK             = 7,
+              STATE_SEND_NACK            = 8;
 
 
-   parameter SR_WIDTH = 8 + 8*NUM_ADDR_BYTES + 8*NUM_DATA_BYTES;
-   parameter STATUS_WIDTH = NUM_ADDR_BYTES+NUM_DATA_BYTES+1;
+   localparam SR_WIDTH = 8 + 8*NUM_ADDR_BYTES + 8*NUM_DATA_BYTES;
+   localparam STATUS_WIDTH = NUM_ADDR_BYTES+NUM_DATA_BYTES+1;
    reg [SR_WIDTH-1:0] sr;
    reg [1:0]  scl_count;
    reg [3:0]  state;
