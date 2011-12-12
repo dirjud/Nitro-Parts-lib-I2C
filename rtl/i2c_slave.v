@@ -11,15 +11,19 @@
 //  known bus contention.
 
 module i2c_slave
+  #(parameter NUM_ADDR_BYTES=1,
+    parameter NUM_DATA_BYTES=2,
+    parameter REG_ADDR_WIDTH=8*NUM_ADDR_BYTES,
+    parameter REG_DATA_WIDTH=8*NUM_DATA_BYTES)
    (
     input clk,
     input reset_n,
     input [6:0] chip_addr,
-    input [15:0] datai,
+    input [REG_DATA_WIDTH-1:0] datai,
     input open_drain_mode,
     output reg we,
-    output reg [15:0] datao,
-    output reg [7:0] reg_addr,
+    output reg [REG_DATA_WIDTH-1:0] datao,
+    output reg [REG_ADDR_WIDTH-1:0] reg_addr,
     output reg done,
     output reg busy,
     input sda_in,
@@ -41,9 +45,10 @@ module i2c_slave
    reg [2:0] state;
    reg       scl_s, sda_s, scl_ss, sda_ss, sda_reg, oeb_reg;
    reg [7:0]  sr;
-   reg [1:0]  transfer_count;
+   reg [1:0]  reg_byte_count;
+   reg [1:0]  addr_byte_count;
    reg        rw_bit;
-   reg [15:0] sr_send;
+   reg [REG_DATA_WIDTH-1:0] sr_send;
    reg        nack;
    reg [6:0]  chip_addr_reg;
    
@@ -82,6 +87,9 @@ module i2c_slave
    wire       sda_rising  =  sda_s && !sda_ss;
    wire       sda_falling = !sda_s &&  sda_ss;
    
+
+   wire [REG_ADDR_WIDTH+8-1:0] shifted_reg_addr = { reg_addr, word };
+   
    
 `ifdef SYNC_RESET
    always @(posedge clk) begin
@@ -91,7 +99,8 @@ module i2c_slave
       if(!reset_n) begin
          sda_reg <= 1;
          oeb_reg <= 1;
-         transfer_count <= 0;
+         reg_byte_count <= 0;
+	 addr_byte_count <= 0;
          sr <= 8'h01;
          state <= STATE_WAIT;
          datao <= 0;
@@ -104,7 +113,8 @@ module i2c_slave
          busy <= 0;
       end else begin
          if(scl_ss && sda_falling) begin // start code
-            transfer_count <= 0;
+            reg_byte_count <= 0;
+            addr_byte_count <= 0;
             sr <= 8'h01;
             state <= STATE_SHIFT;
             sda_reg <= set_sda_reg(1);
@@ -122,7 +132,8 @@ module i2c_slave
             if(state == STATE_WAIT) begin
                done <= 0;
                we <= 0;
-               transfer_count <= 0;
+               reg_byte_count <= 0;
+               addr_byte_count <= 0;
                sr <= 8'h01; // preload sr with LSB 1.  When that 1 reaches the MSB of the shift register, we know we are done.
                sda_reg <= set_sda_reg(1);
                oeb_reg <= set_oeb_reg(1, 1);
@@ -133,36 +144,36 @@ module i2c_slave
                if(scl_rising) begin
                   sr <= word;
                   if(sr[7]) begin
-                     // LSB of transfer count is used to track which
-                     // byte of the 16 bit word is being collected.
-                     // MSB of transfer count is only 0 at the begining
-                     // of the packet to signal the address is being
-                     // collected.  After the address has been received,
-                     // then it is all data after that.
-                     transfer_count[0] <= !transfer_count[0];
-                     if(transfer_count[0]) begin
-                        transfer_count[1] <= 1;
-                     end
+		     if(addr_byte_count <= NUM_ADDR_BYTES) begin
+			addr_byte_count <= addr_byte_count + 1;
 
-                     if(transfer_count == 0) begin // 1st byte (i2c addr)
-                        if(word[7:1] != chip_addr_reg) begin 
-                           state <= STATE_WAIT; // this transfer is not for us
-                           done <= 1;
-                        end else begin
-                           rw_bit <= word[0];
-                           sr_send <= datai; 
+			if(addr_byte_count == 0) begin // 1st byte (i2c addr)
+                           if(word[7:1] != chip_addr_reg) begin 
+                              state <= STATE_WAIT; // this transfer is not for us
+                              done <= 1;
+                           end else begin
+                              rw_bit <= word[0];
+                              sr_send <= datai; 
+                              state <= STATE_ACK;
+                           end
+			end else begin // remaining addr bytes (reg addr)
                            state <= STATE_ACK;
-                        end
-                     end else if(transfer_count == 1) begin//2nd byte (reg addr)
-                        state <= STATE_ACK;
-                        reg_addr <= word;
-                     end else begin
-                        if(transfer_count[0]) begin // Least significant byte
-                           datao[7:0] <= word;
+                           reg_addr <= shifted_reg_addr[REG_ADDR_WIDTH-1:0];
+			end
+                     end else begin 
+			// LSB of transfer count is used to track which
+			// byte of the 16 bit word is being collected.
+			// MSB of transfer count is only 0 at the begining
+			// of the packet to signal the address is being
+			// collected.  After the address has been received,
+			// then it is all data after that.
+			reg_byte_count <= reg_byte_count + 1;
+			datao <= { datao[REG_DATA_WIDTH-9:0], word };
+			
+                        if(reg_byte_count == NUM_DATA_BYTES-1) begin // Least significant byte
                            state <= STATE_WRITE;
                            we <= 1;
                         end else begin              // Most significant byte
-                           datao[15:8] <= word;
                            state <= STATE_ACK;
                         end                     
                      end
@@ -183,6 +194,9 @@ module i2c_slave
                   sda_reg <= set_sda_reg(0);
                   oeb_reg <= set_oeb_reg(0, 0);
                   state <= STATE_ACK2;
+                  if(rw_bit && (reg_byte_count == 0)) begin
+		     sr_send <= datai;
+		  end
                end             
             end else if(state == STATE_ACK2) begin
                sr <= 8'h01;
@@ -191,8 +205,8 @@ module i2c_slave
                if(scl_falling) begin
                   if(rw_bit) begin // when master is reading, go to STATE_SEND
                      state <= STATE_SEND;
-                     sda_reg <= set_sda_reg(sr_send[15]);
-                     oeb_reg <= set_oeb_reg(0, sr_send[15]);
+                     sda_reg <= set_sda_reg(sr_send[REG_DATA_WIDTH-1]);
+                     oeb_reg <= set_oeb_reg(0, sr_send[REG_DATA_WIDTH-1]);
                      sr_send <= sr_send << 1;
                   end else begin // when master writing, receive in STATE_SHIFT
                      state <= STATE_SHIFT;
@@ -213,8 +227,8 @@ module i2c_slave
                      oeb_reg <= set_oeb_reg(1, 1);
                   end else begin
                      state <= STATE_SEND; // we received an ack, so more data requested
-                     sda_reg <= set_sda_reg(sr_send[15]);
-                     oeb_reg <= set_oeb_reg(0, sr_send[15]);
+                     sda_reg <= set_sda_reg(sr_send[REG_DATA_WIDTH-1]);
+                     oeb_reg <= set_oeb_reg(0, sr_send[REG_DATA_WIDTH-1]);
                      sr_send <= sr_send << 1;
                   end
                end
@@ -222,21 +236,20 @@ module i2c_slave
                if(scl_falling) begin
                   sr <= word;
                   if(sr[7]) begin
-                     transfer_count[0] <= !transfer_count[0];
+                     reg_byte_count <= reg_byte_count + 1;
                      sda_reg <= set_sda_reg(1);
                      oeb_reg <= set_oeb_reg(1, 1);
                      state <= STATE_CHECK_ACK;
 
-                     if(transfer_count[0]) begin
-                        reg_addr <= reg_addr + 1; // advance the internal address in between MSB and LSB byte so that the next address data is available after the LSB transfer.
-                     end else begin
-                        sr_send <= datai;
+                     if(reg_byte_count == NUM_DATA_BYTES-1) begin
+                        reg_addr <= reg_addr + 1; // advance the internal address so that the next address data is available after this transfer.
+			reg_byte_count <= 0;
                      end
                      
 
                   end else begin
-                     sda_reg <= set_sda_reg(sr_send[15]);
-                     oeb_reg <= set_oeb_reg(0, sr_send[15]);
+                     sda_reg <= set_sda_reg(sr_send[REG_DATA_WIDTH-1]);
+                     oeb_reg <= set_oeb_reg(0, sr_send[REG_DATA_WIDTH-1]);
                      sr_send <= sr_send << 1;
                   end
                end
