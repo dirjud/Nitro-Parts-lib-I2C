@@ -81,6 +81,10 @@ module i2c_slave
    end
 
    wire [7:0] word = { sr[6:0], sda_s };
+   /* verilator lint_off WIDTH */
+   wire [REG_DATA_WIDTH-1:0] word_expanded = word;
+   /* verilator lint_on WIDTH */
+   
 
    wire       scl_rising  =  scl_s && !scl_ss;
    wire       scl_falling = !scl_s &&  scl_ss;
@@ -168,7 +172,7 @@ module i2c_slave
 			// collected.  After the address has been received,
 			// then it is all data after that.
 			reg_byte_count <= reg_byte_count + 1;
-			datao <= { datao[REG_DATA_WIDTH-9:0], word };
+			datao <= (datao << 8) | word_expanded;
 			
                         if(reg_byte_count == NUM_DATA_BYTES-1) begin // Least significant byte
                            state <= STATE_WRITE;
