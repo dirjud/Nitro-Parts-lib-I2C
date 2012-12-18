@@ -120,12 +120,14 @@ module tb();
       test_rw(CHIP_ADDR, 8'h55, 16'hAAC3);
 
       $display("Testing Multi-word write");
-      write_mode = 1;
-      #6000 write_i2c(CHIP_ADDR, 8'h54, 16'h5555);
-      #6000 write_i2c(CHIP_ADDR, 8'h54, 16'hA050);
-      write_mode = 0;
+      write_i2c_multibyte(CHIP_ADDR, 8'h54, 16'h5555, 16'h5A50);
       #6000 read_i2c(CHIP_ADDR, 8'h55);
-      if(master_datao == 16'hA050)
+      if(master_datao == 16'h5A50)
+	$display(" PASSED multi-word write.");
+      else
+	$display(" FAILED multi-word write.");
+      #6000 read_i2c(CHIP_ADDR, 8'h54);
+      if(master_datao == 16'h5555)
 	$display(" PASSED multi-word write.");
       else
 	$display(" FAILED multi-word write.");
@@ -164,7 +166,27 @@ module tb();
 	   $display("FAILED wrote=0x%x read=0x%x", data, master_datao);
       end
    endtask
-   
+
+   task write_i2c_multibyte;
+      input [6:0] chip_addr;
+      input [7:0] reg_addr;
+      input [15:0] data1;
+      input [15:0] data2;
+      begin
+	 @(posedge clk) begin
+	    write_mode = 1;
+	    write_i2c(chip_addr, reg_addr, data1);
+	 end
+	 #6000 @(posedge clk);
+	 @(posedge clk) begin
+	    write_i2c(chip_addr, reg_addr, data2);
+	 end
+	 @(posedge clk) begin
+	    write_mode =0;
+	 end
+	 @(posedge clk);
+      end
+   endtask	    
    
    task write_i2c;
       input [6:0] chip_addr;
