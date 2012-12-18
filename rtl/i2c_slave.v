@@ -171,14 +171,15 @@ module i2c_slave
 			// of the packet to signal the address is being
 			// collected.  After the address has been received,
 			// then it is all data after that.
-			reg_byte_count <= reg_byte_count + 1;
 			datao <= (datao << 8) | word_expanded;
 			
                         if(reg_byte_count == NUM_DATA_BYTES-1) begin // Least significant byte
                            state <= STATE_WRITE;
                            we <= 1;
+			   reg_byte_count <= reg_byte_count + 1 - NUM_DATA_BYTES;
                         end else begin              // Most significant byte
                            state <= STATE_ACK;
+			   reg_byte_count <= reg_byte_count + 1;
                         end                     
                      end
                   end

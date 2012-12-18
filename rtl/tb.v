@@ -9,7 +9,7 @@ module tb();
    reg [15:0]  master_datai;
    reg 	       master_we;
    reg 	       master_re;
-   wire [4:0] master_status;
+   wire [3:0] master_status;
    wire       master_done;
    wire       master_busy;
    wire [15:0] master_datao;
@@ -31,9 +31,13 @@ module tb();
    wire        slave_scl_oeb;
    wire        slave_busy;
    wire        slave_done;
+   reg 	       write_mode;
    reg 	       open_drain_mode;
    
-   i2c_master i2c_master
+   i2c_master
+     #(.NUM_ADDR_BYTES(1),
+       .NUM_DATA_BYTES(2))
+     i2c_master
      (.clk		(clk),
       .reset_n		(reset_n),
       .clk_divider	(clk_divider),
@@ -42,6 +46,7 @@ module tb();
       .datai		(master_datai),
       .open_drain_mode  (open_drain_mode),
       .we		(master_we),
+      .write_mode       (write_mode),
       .re		(master_re),
       .status		(master_status),
       .done		(master_done),
@@ -56,7 +61,10 @@ module tb();
       .scl_oeb		(master_scl_oeb)
       );
    
-   i2c_slave i2c_slave
+   i2c_slave 
+     #(.NUM_ADDR_BYTES(1),
+       .NUM_DATA_BYTES(2))
+     i2c_slave
      (.clk		(clk),
       .reset_n		(reset_n),
       .chip_addr	(slave_chip_addr),
@@ -99,6 +107,7 @@ module tb();
       master_datai = 0;
       master_we = 0;
       master_re = 0;
+      write_mode = 0;
       
       
       $dumpfile("i2c_test.vcd");
@@ -110,11 +119,23 @@ module tb();
       $display("Testing open drain mode=1");
       test_rw(CHIP_ADDR, 8'h55, 16'hAAC3);
 
+      $display("Testing Multi-word write");
+      write_mode = 1;
+      #6000 write_i2c(CHIP_ADDR, 8'h54, 16'h5555);
+      #6000 write_i2c(CHIP_ADDR, 8'h54, 16'hA050);
+      write_mode = 0;
+      #6000 read_i2c(CHIP_ADDR, 8'h55);
+      if(master_datao == 16'hA050)
+	$display(" PASSED multi-word write.");
+      else
+	$display(" FAILED multi-word write.");
+      
+      
       $display("Testing open drain mode=0");
-      #500 open_drain_mode = 0;
-      #100 test_rw(CHIP_ADDR, 8'hAA, 16'h5569);
-      #100 test_rw(CHIP_ADDR, 8'hAA, 16'h0000);
-      #100 test_rw(CHIP_ADDR, 8'hAA, 16'hFFFF);
+      #6000 open_drain_mode = 0;
+      #6000 test_rw(CHIP_ADDR, 8'hAA, 16'h5569);
+      #6000 test_rw(CHIP_ADDR, 8'hAA, 16'h0000);
+      #6000 test_rw(CHIP_ADDR, 8'hAA, 16'hFFFF);
       
       #40 $finish;
    end
