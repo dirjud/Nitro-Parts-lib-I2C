@@ -63,7 +63,9 @@ module i2c_master
     input [11:0] clk_divider, // sets the 1/4 scl period
 
     input [6:0] chip_addr,
+    /* verilator lint_off LITENDIAN */
     input [REG_ADDR_WIDTH-1:0] reg_addr,
+    /* verilator lint_on LITENDIAN */
     input [8*NUM_DATA_BYTES-1:0] datai,
     input open_drain_mode,
     input we,
