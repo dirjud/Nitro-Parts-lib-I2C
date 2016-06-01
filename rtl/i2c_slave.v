@@ -173,10 +173,14 @@ module i2c_slave
 			// then it is all data after that.
 			datao <= (datao << 8) | word_expanded;
 			
+			/* verilator lint_off WIDTH */
                         if(reg_byte_count == NUM_DATA_BYTES-1) begin // Least significant byte
+			   /* verilator lint_on WIDTH */
                            state <= STATE_WRITE;
                            we <= 1;
+			   /* verilator lint_off WIDTH */
 			   reg_byte_count <= reg_byte_count + 1 - NUM_DATA_BYTES;
+			   /* verilator lint_on WIDTH */
                         end else begin              // Most significant byte
                            state <= STATE_ACK;
 			   reg_byte_count <= reg_byte_count + 1;
@@ -246,7 +250,9 @@ module i2c_slave
                      oeb_reg <= set_oeb_reg(1, 1);
                      state <= STATE_CHECK_ACK;
 
+		     /* verilator lint_off WIDTH */
                      if(reg_byte_count == NUM_DATA_BYTES-1) begin
+			/* verilator lint_on WIDTH */
                         reg_addr <= reg_addr + 1; // advance the internal address so that the next address data is available after this transfer.
 			reg_byte_count <= 0;
                      end
