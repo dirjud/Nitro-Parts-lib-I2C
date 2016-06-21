@@ -266,8 +266,10 @@ module i2c_master
                         sr <= { sr[SR_WIDTH-2:0], 1'b1 };
                         sr_count <= sr_count + 1;
                      end
-                  end else if(scl_count == 2'b01) begin
-                     status <= { status[STATUS_WIDTH-2:0], sda_s }; // sample the ack bit
+                  end else if(scl_count == 2'b10) begin
+		     if(scl_s) begin
+			status <= { status[STATUS_WIDTH-2:0], sda_s }; // sample the ack bit
+		     end
                   end
 
                end else if(state == STATE_STOP_BIT) begin
