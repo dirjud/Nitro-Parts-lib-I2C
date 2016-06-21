@@ -317,7 +317,9 @@ module i2c_master
                end
 
             end else begin
-	       if(scl_count[1] == 0 || scl_s == 1) begin // scl stretch if someone is holding the scl line down
+	       if(scl_count[1] == 1 && scl_s == 0 && clk_count != 0) begin // scl stretch if someone is holding the scl line down
+		  
+	       end else begin
 		  clk_count <= clk_count + 1;
 	       end
             end
