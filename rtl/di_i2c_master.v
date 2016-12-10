@@ -34,7 +34,7 @@ module di_i2c_master
    wire i2c_done, i2c_busy;
    reg [15:0] i2c_transfer_status;
    wire [NUM_ADDR_BYTES+NUM_DATA_BYTES:0] i2c_status;
-   wire [7:0] i2c_datao;
+   wire [NUM_DATA_BYTES*8-1:0] i2c_datao;
    reg        i2c_rdy;
 
    wire term_active = di_term_addr == i2c_term_addr;
