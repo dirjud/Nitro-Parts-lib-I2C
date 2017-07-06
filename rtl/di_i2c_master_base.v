@@ -94,7 +94,7 @@ module di_i2c_master_base
       end
    end
 
-   parameter REG_ADDR_WIDTH = NUM_ADDR_BYTES==0 ? 1 : 8*NUM_ADDR_BYTES;
+   localparam REG_ADDR_WIDTH = NUM_ADDR_BYTES==0 ? 1 : 8*NUM_ADDR_BYTES;
 
    i2c_master
      #(.NUM_ADDR_BYTES(NUM_ADDR_BYTES),
