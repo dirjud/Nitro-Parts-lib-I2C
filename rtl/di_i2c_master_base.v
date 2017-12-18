@@ -50,6 +50,7 @@ module di_i2c_master_base
    wire i2c_re        = di_read_req  && term_active;
    wire i2c_we        = di_write     && term_active;
    wire i2c_write_mode= di_write_mode&& term_active;
+   wire i2c_read_mode = di_read_mode && term_active && (NUM_ADDR_BYTES == 0); // only do continuous reads if there is no address bytes
 
    always @(posedge ifclk or negedge resetb) begin
       if(!resetb) begin
@@ -120,6 +121,7 @@ module di_i2c_master_base
       .we               (i2c_we),
       .write_mode       (i2c_write_mode),
       .re               (i2c_re),
+      .read_mode        (i2c_read_mode),
       .sda_in           (sda_in),
       .scl_in           (scl_in));
 

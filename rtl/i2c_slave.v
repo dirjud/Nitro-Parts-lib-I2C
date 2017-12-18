@@ -227,6 +227,9 @@ module i2c_slave
                sr <= 8'h01;
                if(scl_rising) begin
                   nack <= sda_s;
+                  if(reg_byte_count == 0) begin // sample next word
+                     sr_send <= datai;
+                  end
                end 
                if(scl_falling) begin
                   if(nack) begin
