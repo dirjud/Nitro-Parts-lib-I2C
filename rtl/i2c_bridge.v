@@ -12,7 +12,7 @@ module i2c_bridge
    );
 
    reg [1:0] state;
-   parameter STATE_IDLE = 0, STATE_MASTER = 1, STATE_SLAVE = 2;
+   localparam STATE_IDLE = 0, STATE_MASTER = 1, STATE_SLAVE = 2;
 
    reg 	     oe_slave, oe_master, sda_slave_in, sda_master_in, scl_master_in;
    reg [3:0] cnt;
