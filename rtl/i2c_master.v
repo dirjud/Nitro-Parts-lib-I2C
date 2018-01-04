@@ -291,7 +291,9 @@ module i2c_master
                      // wait for sda to high to ensure stop bit worked
                      if(sda_s) begin
                         state <= STATE_WAIT;
-                        done  <= 1;
+                        if(busy) begin
+                           done  <= 1;
+                        end
                      end
                   end else if(scl_count == 2'b00) begin
                      sda_reg <= set_out_reg(0); // resend stop bit (usually won't get here unless we have to keep clocking to flush the data the slave is sending)
