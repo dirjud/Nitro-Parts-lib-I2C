@@ -93,7 +93,9 @@ module i2c_master
               STATE_START_BIT_FOR_READ   = 5,
               STATE_SHIFT_IN             = 6,
               STATE_SEND_ACK             = 7,
-              STATE_SEND_NACK            = 8;
+              STATE_SEND_NACK            = 8,
+              STATE_STOP_BIT2            = 9;
+   
 
 
    localparam SR_WIDTH = 8 + 8*NUM_ADDR_BYTES + 8*NUM_DATA_BYTES;
@@ -162,7 +164,6 @@ module i2c_master
 	    if (!write_mode && !read_mode) begin
 	       continuing <= 0;
 	       if(continuing) begin // send stop bit
-                  state <= STATE_STOP_BIT;
                   sda_reg <= set_out_reg(0);
                   oeb_reg <= set_oeb_reg(0, 0);
 	       end else begin
@@ -193,9 +194,7 @@ module i2c_master
 	       
             sr_count  <= 0;
 
-	    
-
-            if(we) begin
+	    if(we) begin
 	       if (continuing) begin
 		  state   <= STATE_SHIFT_OUT;
 	       end else begin
@@ -217,14 +216,24 @@ module i2c_master
                readPass<= 0;
                busy    <= 1;
             end else begin
-               busy <= 0;
+	       if (!write_mode && !read_mode) begin
+	          continuing <= 0;
+	          if(continuing) begin // send stop bit
+                     state <= STATE_STOP_BIT;
+                     busy <= 1;
+                  end else begin
+                     busy <= 0;
+                  end
+               end else begin
+                  busy <= 0;
+               end
             end
                     
          end else begin
             if(clk_count == clk_divider) begin // advance state on slow i2c clk
                clk_count <= 0;
                scl_count <= scl_count + 1;
-
+               
                if(state == STATE_START_BIT_FOR_WRITE) begin
                   sda_reg <= set_out_reg(0);
                   oeb_reg <= set_oeb_reg(0, 0);
@@ -287,14 +296,6 @@ module i2c_master
                   if(scl_count == 2'b10) begin
                      sda_reg <= set_out_reg(1);
                      oeb_reg <= set_oeb_reg(1, 1);
-                  end else if(scl_count == 2'b11) begin
-                     // wait for sda to high to ensure stop bit worked
-                     if(sda_s) begin
-                        state <= STATE_WAIT;
-                        if(busy) begin
-                           done  <= 1;
-                        end
-                     end
                   end else if(scl_count == 2'b00) begin
                      sda_reg <= set_out_reg(0); // resend stop bit (usually won't get here unless we have to keep clocking to flush the data the slave is sending)
                      oeb_reg <= set_oeb_reg(0, 0);
@@ -351,6 +352,7 @@ module i2c_master
                      sda_reg <= set_out_reg(1);
                      oeb_reg <= set_oeb_reg(1, 1);
                   end
+                  
                end
 
             end else begin
@@ -359,6 +361,20 @@ module i2c_master
 	       end else begin
 		  clk_count <= clk_count + 1;
 	       end
+               if(scl_count == 2'b11 && clk_count == clk_divider-1) begin
+                  if(state == STATE_STOP_BIT2) begin
+                     state <= STATE_WAIT;
+                     if(busy) begin
+                        done  <= 1;
+                     end
+                  end else if(state == STATE_STOP_BIT) begin
+                     // wait for sda to high to ensure stop bit worked
+                     if(sda_s) begin
+                        state <= STATE_STOP_BIT2;
+                        scl_count <= 2'b10;
+                     end
+                  end
+               end
             end
          end 
       end
