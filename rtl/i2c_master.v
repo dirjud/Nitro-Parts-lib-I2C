@@ -232,13 +232,21 @@ module i2c_master
          end else begin
             if(clk_count == clk_divider) begin // advance state on slow i2c clk
                clk_count <= 0;
-               scl_count <= scl_count + 1;
+               if(state == STATE_START_BIT_FOR_WRITE ||
+                  state == STATE_STOP_BIT2) begin
+                  // in these states, we don't want the clock to go low
+                  scl_count[1] <= 1;
+                  scl_count[0] <= ~scl_count[0];
+               end else begin
+                  scl_count <= scl_count + 1;
+               end
                
                if(state == STATE_START_BIT_FOR_WRITE) begin
-                  sda_reg <= set_out_reg(0);
-                  oeb_reg <= set_oeb_reg(0, 0);
-                  state <= STATE_SHIFT_OUT;
-                  
+                  if(sda_s && scl_s && scl_count == 2) begin
+                     sda_reg <= set_out_reg(0);
+                     oeb_reg <= set_oeb_reg(0, 0);
+                     state <= STATE_SHIFT_OUT;
+                  end
                end else if(state == STATE_START_BIT_FOR_READ) begin
                   if(scl_count == 2'b10) begin
                      sda_reg <= set_out_reg(0);
@@ -362,7 +370,7 @@ module i2c_master
 		  clk_count <= clk_count + 1;
 	       end
                if(scl_count == 2'b11 && clk_count == clk_divider-1) begin
-                  if(state == STATE_STOP_BIT2) begin
+                  if(state == STATE_STOP_BIT2 && sda_s) begin
                      state <= STATE_WAIT;
                      if(busy) begin
                         done  <= 1;

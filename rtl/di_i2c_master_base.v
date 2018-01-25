@@ -44,7 +44,8 @@ module di_i2c_master_base
    reg [15:0] i2c_transfer_status;
    wire [NUM_ADDR_BYTES+NUM_DATA_BYTES:0] i2c_status;
    wire [NUM_DATA_BYTES*8-1:0] i2c_datao;
-   reg        i2c_rdy;
+   reg        i2c_rdy, i2c_re_s, state;
+   parameter STATE_WAIT=0, STATE_READ_REQ=1;
 
    wire term_active = di_term_addr == i2c_term_addr;
    wire i2c_re        = di_read_req  && term_active;
@@ -55,12 +56,23 @@ module di_i2c_master_base
    always @(posedge ifclk or negedge resetb) begin
       if(!resetb) begin
          i2c_rdy      <= 0;
+         i2c_re_s     <= 0;
+         state        <= STATE_WAIT;
       end else begin
-         if(di_read_req) begin
+         if(i2c_re) begin
             i2c_rdy <= 0;
+            state <= STATE_READ_REQ;
+         end else if(state == STATE_READ_REQ) begin
+            if(!i2c_busy) begin
+               i2c_re_s <= 1;
+               state <= STATE_WAIT;
+            end
+         end else if(i2c_re_s) begin
+            i2c_re_s <= 0;
          end else if(i2c_done) begin
             i2c_rdy <= 1;
          end
+
       end
    end
 
@@ -120,7 +132,7 @@ module di_i2c_master_base
       .busy             (i2c_busy),
       .we               (i2c_we),
       .write_mode       (i2c_write_mode),
-      .re               (i2c_re),
+      .re               (i2c_re_s),
       .read_mode        (i2c_read_mode),
       .sda_in           (sda_in),
       .scl_in           (scl_in));
