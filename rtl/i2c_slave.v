@@ -162,9 +162,7 @@ module i2c_slave
                            end
 			end else begin // remaining addr bytes (reg addr)
                            state <= STATE_ACK;
-`ifdef REG_ADDR_WIDTH > 0
-                           reg_addr <= shifted_reg_addr[REG_ADDR_WIDTH-1:0];
-`endif                           
+                           reg_addr <= shifted_reg_addr;//[REG_ADDR_WIDTH-1:0];
 			end
                      end else begin 
 			// LSB of transfer count is used to track which
